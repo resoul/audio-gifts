@@ -3,7 +3,7 @@ import { Footer } from "@/components/Footer";
 import { useI18n } from "@/lib/i18n";
 import { Helmet } from "react-helmet-async";
 
-export function LegalPage() {
+export default function LegalPage() {
   const { lang } = useI18n();
   const isRu = lang === "ru";
 

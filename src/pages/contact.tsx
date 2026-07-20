@@ -15,7 +15,7 @@ const schema = z.object({
   message: z.string().trim().min(1).max(1000),
 });
 
-export function ContactPage() {
+export default function ContactPage() {
   const { lang } = useI18n();
   const isRu = lang === "ru";
   const [form, setForm] = useState({ name: "", email: "", message: "" });

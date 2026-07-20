@@ -13,7 +13,7 @@ import { Helmet } from "react-helmet-async";
 const emailSchema = z.string().trim().email().max(255);
 const nameSchema = z.string().trim().min(1).max(100);
 
-export function CreateCustomTrackPage() {
+export default function CreateCustomTrackPage() {
   const { t } = useI18n();
   const [description, setDescription] = useState("");
   const [name, setName] = useState("");

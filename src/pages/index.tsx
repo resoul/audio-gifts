@@ -5,7 +5,7 @@ import { Footer } from "@/components/Footer";
 import { StickyCTA } from "@/components/StickyCTA";
 import { Helmet } from "react-helmet-async";
 
-export function IndexRoute() {
+export default function IndexRoute() {
   return (
     <>
       <Helmet>

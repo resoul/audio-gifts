@@ -1,11 +1,13 @@
 import { Navigate, Route, Routes } from 'react-router';
-import { ErrorRouting } from '@/errors/error-routing';
 import { MainLayout } from '@/layouts/main/layout';
-import { IndexRoute } from "@/pages";
-import { ChooseSongPage } from "@/pages/choose-song";
-import { ContactPage } from "@/pages/contact";
-import { CreateCustomTrackPage } from "@/pages/create-custom-track";
-import { LegalPage } from "@/pages/legal";
+import { lazy } from "react";
+
+const ErrorRouting = lazy(() => import("@/errors/error-routing"))
+const ChooseSongPage = lazy(() => import("@/pages/choose-song"))
+const ContactPage = lazy(() => import("@/pages/contact"))
+const LegalPage = lazy(() => import("@/pages/legal"))
+const CreateCustomTrackPage = lazy(() => import("@/pages/create-custom-track"))
+const IndexRoute = lazy(() => import("@/pages"))
 
 export function AppRoutingSetup() {
   return (

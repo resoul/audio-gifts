@@ -2,7 +2,7 @@ import { ErrorLayout } from '@/layouts/error/layout';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Error404 } from './error-404';
 
-export function ErrorRouting() {
+export default function ErrorRouting() {
   return (
     <Routes>
       <Route element={<ErrorLayout />}>

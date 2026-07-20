@@ -88,7 +88,7 @@ function formatPrettyDate(iso: string, lang: Lang = "en") {
   return d.toLocaleDateString(lang === "ru" ? "ru-RU" : "en-US", { year: "numeric", month: "long", day: "numeric" });
 }
 
-export function ChooseSongPage() {
+export default function ChooseSongPage() {
   const { t, lang } = useI18n();
   const [step, setStep] = useState(1);
 
@@ -1198,8 +1198,6 @@ function Step4(props: {
   const {
     t,
     lang,
-    platforms,
-    togglePlatform,
     releaseDate,
     setReleaseDate,
     trackTitle,
@@ -1222,7 +1220,7 @@ function Step4(props: {
       {/* Track title */}
       <div className="mb-6">
         <p className="text-xs uppercase tracking-[0.2em] text-accent mb-3">{t("s4.trackTitle")}</p>
-        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5">
+        <div className="rounded-2xl border border-white/10 bg-white/2 p-5">
           <input
             type="text"
             value={trackTitle}
