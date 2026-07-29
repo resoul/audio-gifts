@@ -289,6 +289,15 @@ export default function ChooseSongPage() {
     }
   }, [step]);
 
+  // Seek current preview to a fraction (0..1) of its duration, e.g. from a waveform/progress click
+  const seekPreview = (fraction: number) => {
+    const audio = audioRef.current;
+    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+    const clamped = Math.min(1, Math.max(0, fraction));
+    audio.currentTime = clamped * audio.duration;
+    setPreviewProgress(clamped);
+  };
+
   useEffect(() => {
     return () => {
       audioRef.current?.pause();
@@ -459,6 +468,7 @@ export default function ChooseSongPage() {
                         setPreviewId={setPreviewId}
                         previewProgress={previewProgress}
                         previewLoading={previewLoading}
+                        onSeekPreview={seekPreview}
                         onContinue={() => setStep((s) => Math.min(STEPS.length, s + 1))}
                         onClearSelection={() => {
                           setSelectedTrack(null);
@@ -588,6 +598,7 @@ function Step1(props: {
   setPreviewId: (id: string | null) => void;
   previewProgress: number;
   previewLoading: boolean;
+  onSeekPreview: (fraction: number) => void;
   onContinue: () => void;
   onClearSelection: () => void;
 }) {
@@ -606,6 +617,7 @@ function Step1(props: {
     setPreviewId,
     previewProgress,
     previewLoading,
+    onSeekPreview,
     onContinue,
     onClearSelection,
   } = props;
@@ -736,8 +748,7 @@ function Step1(props: {
                 return (
                     <div
                         key={tr.id}
-                        className="group rounded-2xl p-5 border border-white/10 bg-white/[0.02] hover:border-white/20 transition-all cursor-pointer"
-                        onClick={() => onSelect(tr)}
+                        className="group rounded-2xl p-5 border border-white/10 bg-white/[0.02] hover:border-white/20 transition-all"
                     >
                       <div className="flex items-start justify-between mb-4">
                         <div>
@@ -762,19 +773,41 @@ function Step1(props: {
                           )}
                         </button>
                       </div>
-                      <Waveform bars={28} animated={playing && !previewLoading} className="h-10" />
-                      {playing && (
-                          <div className="mt-2 h-0.5 rounded-full bg-white/10 overflow-hidden">
-                            <div
-                                className="h-full bg-gradient-brand transition-[width] duration-150"
-                                style={{ width: `${Math.round(previewProgress * 100)}%` }}
-                            />
-                          </div>
-                      )}
-                      <div className="flex justify-between text-xs text-muted-foreground mt-3">
+                      <div
+                          className={playing ? "cursor-pointer" : undefined}
+                          onClick={(e) => {
+                            if (!playing) return;
+                            e.stopPropagation();
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const fraction = (e.clientX - rect.left) / rect.width;
+                            onSeekPreview(fraction);
+                          }}
+                      >
+                        <Waveform bars={28} animated={playing && !previewLoading} className="h-10" />
+                        {playing && (
+                            <div className="mt-2 h-0.5 rounded-full bg-white/10 overflow-hidden">
+                              <div
+                                  className="h-full bg-gradient-brand transition-[width] duration-150"
+                                  style={{ width: `${Math.round(previewProgress * 100)}%` }}
+                              />
+                            </div>
+                        )}
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground mt-3 mb-3">
                         <span>{t("s1.preview")}</span>
                         <span>{tr.duration}</span>
                       </div>
+                      <Button
+                          variant="hero"
+                          size="sm"
+                          className="w-full"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelect(tr);
+                          }}
+                      >
+                        <Check className="h-4 w-4" /> {t("s1.selectTrack")}
+                      </Button>
                     </div>
                 );
               })}
