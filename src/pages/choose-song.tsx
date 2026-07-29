@@ -123,7 +123,11 @@ export default function ChooseSongPage() {
   const [insertAt, setInsertAt] = useState<number>(0); // seconds in track
   const [isRecording, setIsRecording] = useState(false);
   const [voiceRulesAccepted, setVoiceRulesAccepted] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
   const recordTimer = useRef<number | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
 
   // Step 3
   const [coverPrompt, setCoverPrompt] = useState("");
@@ -301,6 +305,11 @@ export default function ChooseSongPage() {
   useEffect(() => {
     return () => {
       audioRef.current?.pause();
+      if (recordTimer.current) window.clearInterval(recordTimer.current);
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      mediaStreamRef.current?.getTracks().forEach((tr) => tr.stop());
     };
   }, []);
 
@@ -335,14 +344,68 @@ export default function ChooseSongPage() {
     });
   };
 
-  const startRecording = () => {
-    setIsRecording(true);
-    let elapsed = 0;
-    recordTimer.current = window.setInterval(() => {
-      elapsed += 1;
-      setVoiceDuration(elapsed);
-      if (elapsed >= 30) stopRecording();
-    }, 1000);
+  const startRecording = async () => {
+    setRecordError(null);
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setRecordError(t("s2.record.errorUnsupported"));
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      recordedChunksRef.current = [];
+
+      const mimeType = [
+        "audio/webm;codecs=opus",
+        "audio/webm",
+        "audio/mp4",
+      ].find((type) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported?.(type));
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+
+      recorder.start();
+      setIsRecording(true);
+
+      let elapsed = 0;
+      recordTimer.current = window.setInterval(() => {
+        elapsed += 1;
+        setVoiceDuration(elapsed);
+        if (elapsed >= 30) stopRecording();
+      }, 1000);
+
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const file = new File([blob], "recording.webm", { type: blob.type });
+        const url = URL.createObjectURL(blob);
+
+        setVoiceFile(file);
+        setVoiceUrl(url);
+        // Chrome can report Infinity/NaN duration for freshly recorded blobs until
+        // playback seeks once, so fall back to the timer's elapsed seconds.
+        setVoiceDuration(elapsed > 0 ? elapsed : 1);
+
+        const audio = new Audio(url);
+        audio.addEventListener("loadedmetadata", () => {
+          if (Number.isFinite(audio.duration) && audio.duration > 0) {
+            setVoiceDuration(Math.round(audio.duration));
+          }
+        });
+
+        mediaStreamRef.current?.getTracks().forEach((tr) => tr.stop());
+        mediaStreamRef.current = null;
+      };
+    } catch {
+      setRecordError(t("s2.record.errorDenied"));
+      mediaStreamRef.current?.getTracks().forEach((tr) => tr.stop());
+      mediaStreamRef.current = null;
+    }
   };
 
   const stopRecording = () => {
@@ -351,8 +414,9 @@ export default function ChooseSongPage() {
       window.clearInterval(recordTimer.current);
       recordTimer.current = null;
     }
-    // Mock: mark a recorded clip exists without a real blob
-    setVoiceFile(new File([], "recording.webm"));
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
   };
 
   // Cover gen mock
@@ -496,7 +560,9 @@ export default function ChooseSongPage() {
                           setVoiceUrl(null);
                           setVoiceDuration(8);
                           setVoiceRulesAccepted(false);
+                          setRecordError(null);
                         }}
+                        recordError={recordError}
                     />
                 )}
 
@@ -833,11 +899,12 @@ function Step2(props: {
   rulesAccepted: boolean;
   setRulesAccepted: (v: boolean) => void;
   resetVoice: () => void;
+  recordError: string | null;
 }) {
   const {
     track, voiceFile, voiceUrl, voiceDuration, insertAt, setInsertAt,
     onVoiceFile, isRecording, startRecording, stopRecording,
-    rulesAccepted, setRulesAccepted, resetVoice,
+    rulesAccepted, setRulesAccepted, resetVoice, recordError,
   } = props;
   const { t } = useI18n();
   const [rulesOpen, setRulesOpen] = useState(true);
@@ -890,6 +957,9 @@ function Step2(props: {
                 <Button variant="default" size="sm" onClick={stopRecording}>
                   {t("s2.record.stop")}
                 </Button>
+            )}
+            {recordError && (
+                <p className="text-xs text-destructive mt-3">{recordError}</p>
             )}
           </div>
         </div>
