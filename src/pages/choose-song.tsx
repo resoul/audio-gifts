@@ -28,7 +28,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Checkbox } from "@/components/ui/checkbox";
 import { useI18n, type Lang } from "@/lib/i18n";
 import { Helmet } from "react-helmet-async";
-import { fetchGenres, fetchMoods, fetchSongs, getAudioUrl } from "@/lib/supabase";
+import { getAudioUrl } from "@/lib/supabase";
+import { useGenres, useMoods, useSongs } from "@/hooks/use-catalog";
 
 const FALLBACK_GENRES = ["All", "Pop", "Hip-Hop", "EDM", "Acoustic", "R&B", "Indie"] as const;
 const FALLBACK_MOODS = ["All", "Joyful", "Romantic", "Nostalgic", "Uplifting", "Melancholic"] as const;
@@ -75,7 +76,6 @@ function parseSeconds(value: unknown): number | null {
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (trimmed === "") return null;
-    // "mm:ss" or "hh:mm:ss"
     if (trimmed.includes(":")) {
       const parts = trimmed.split(":").map((p) => Number(p));
       if (parts.some((p) => !Number.isFinite(p))) return null;
@@ -104,19 +104,29 @@ export default function ChooseSongPage() {
   const [step, setStep] = useState(1);
 
   // Step 1
-  const [genres, setGenres] = useState<string[]>([...FALLBACK_GENRES]);
+  const { data: genresData } = useGenres();
+  const { data: moodsData } = useMoods();
+
+  const genres = useMemo(
+      () => ["All", ...((genresData ?? []).map((item) => item.name).filter(Boolean))],
+      [genresData],
+  );
+  const moods = useMemo(
+      () => ["All", ...((moodsData ?? []).map((item) => item.name).filter(Boolean))],
+      [moodsData],
+  );
+
+  const genreOptions = genresData && genresData.length > 0 ? genres : [...FALLBACK_GENRES];
+  const moodOptions = moodsData && moodsData.length > 0 ? moods : [...FALLBACK_MOODS];
+
   const [genre, setGenre] = useState<string>("All");
-  const [moods, setMoods] = useState<string[]>([...FALLBACK_MOODS]);
   const [mood, setMood] = useState<string>("All");
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
-  const [tracks, setTracks] = useState<Track[]>([]);
-  const [tracksLoading, setTracksLoading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [previewProgress, setPreviewProgress] = useState(0); // 0..1
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // Step 2
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
   const [voiceDuration, setVoiceDuration] = useState<number>(8); // mock seconds
@@ -138,7 +148,7 @@ export default function ChooseSongPage() {
   const handleCustomCover = (file: File) => {
     const url = URL.createObjectURL(file);
     setCustomCoverUrl(url);
-    // Clear AI gradient so the uploaded image takes over
+
     setCoverGradient(null);
   };
 
@@ -148,91 +158,46 @@ export default function ChooseSongPage() {
   const [trackTitle, setTrackTitle] = useState<string>("");
   const [titleRulesAccepted, setTitleRulesAccepted] = useState(false);
 
-  useEffect(() => {
-    let isMounted = true;
+  const selectedGenreId = useMemo(
+      () => (genre === "All" ? undefined : genresData?.find((item) => item.name === genre)?.id),
+      [genre, genresData],
+  );
+  const selectedMoodId = useMemo(
+      () => (mood === "All" ? undefined : moodsData?.find((item) => item.name === mood)?.id),
+      [mood, moodsData],
+  );
 
-    const loadOptions = async () => {
-      try {
-        const [genresData, moodsData] = await Promise.all([fetchGenres(), fetchMoods()]);
-        if (!isMounted) return;
-        const genreNames = genresData.map((item) => item.name).filter(Boolean);
-        const moodNames = moodsData.map((item) => item.name).filter(Boolean);
-        setGenres(["All", ...genreNames]);
-        setMoods(["All", ...moodNames]);
-      } catch {
-        if (!isMounted) return;
-        setGenres([...FALLBACK_GENRES]);
-        setMoods([...FALLBACK_MOODS]);
-      }
-    };
+  const { data: songsData, isLoading: tracksLoading } = useSongs({
+    genreId: selectedGenreId,
+    moodId: selectedMoodId,
+  });
 
-    void loadOptions();
+  const filtered: Track[] = useMemo(() => {
+    return (songsData ?? []).map((song) => {
+      const durationSec = parseSeconds(song.duration);
+      const startTimeSec = parseSeconds(song.start_time);
 
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+      return {
+        id: song.id,
+        trackName: song.trackName ?? "Untitled track",
+        artistName: song.artistName ?? "Unknown artist",
+        genre: genresData?.find((item) => item.id === song.genre_id)?.name ?? "Unknown",
+        mood: moodsData?.find((item) => item.id === song.mood_id)?.name ?? "Unknown",
+        duration: durationSec !== null ? formatTime(durationSec) : "—",
+        durationSec: durationSec ?? 0,
+        startTime: startTimeSec,
+        endpoint: song.endpoint ?? null,
+      };
+    });
+  }, [songsData, genresData, moodsData]);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadTracks = async () => {
-      setTracksLoading(true);
-
-      try {
-        const genresData = await fetchGenres();
-        const moodsData = await fetchMoods();
-        const songsData = await fetchSongs({
-          genreId: genre === "All" ? undefined : genresData.find((item) => item.name === genre)?.id,
-          moodId: mood === "All" ? undefined : moodsData.find((item) => item.name === mood)?.id,
-        });
-
-        if (!isMounted) return;
-
-        const mappedTracks: Track[] = (songsData ?? []).map((song) => {
-          const durationSec = parseSeconds(song.duration);
-          const startTimeSec = parseSeconds(song.start_time);
-          return {
-            id: song.id,
-            trackName: song.trackName ?? "Untitled track",
-            artistName: song.artistName ?? "Unknown artist",
-            genre: genresData.find((item) => item.id === song.genre_id)?.name ?? "Unknown",
-            mood: moodsData.find((item) => item.id === song.mood_id)?.name ?? "Unknown",
-            duration: durationSec !== null ? formatTime(durationSec) : "—",
-            durationSec: durationSec ?? 0,
-            startTime: startTimeSec,
-            endpoint: song.endpoint ?? null,
-          };
-        });
-
-        setTracks(mappedTracks);
-      } catch {
-        if (!isMounted) return;
-        setTracks([]);
-      } finally {
-        if (isMounted) {
-          setTracksLoading(false);
-        }
-      }
-    };
-
-    void loadTracks();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [genre, mood]);
-
-  const filtered = useMemo(() => tracks, [tracks]);
-
-  // Mini-player: play/pause whichever track is currently set as previewId
   useEffect(() => {
     if (!previewId) {
       audioRef.current?.pause();
       return;
     }
 
-    const track = tracks.find((tr) => tr.id === previewId) ?? selectedTrack;
+    const track = filtered.find((tr) => tr.id === previewId) ?? selectedTrack;
     const url = getAudioUrl(track?.endpoint);
 
     if (!url) {
@@ -284,9 +249,8 @@ export default function ChooseSongPage() {
       audio.pause();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewId]);
+  }, [previewId, filtered]);
 
-  // Stop playback entirely when leaving step 1 or unmounting
   useEffect(() => {
     if (step !== 1) {
       setPreviewId(null);
@@ -335,7 +299,7 @@ export default function ChooseSongPage() {
     setVoiceFile(file);
     const url = URL.createObjectURL(file);
     setVoiceUrl(url);
-    // Try to read real duration; fall back to mock
+
     const audio = new Audio(url);
     audio.addEventListener("loadedmetadata", () => {
       if (Number.isFinite(audio.duration) && audio.duration > 0) {
@@ -387,8 +351,7 @@ export default function ChooseSongPage() {
 
         setVoiceFile(file);
         setVoiceUrl(url);
-        // Chrome can report Infinity/NaN duration for freshly recorded blobs until
-        // playback seeks once, so fall back to the timer's elapsed seconds.
+
         setVoiceDuration(elapsed > 0 ? elapsed : 1);
 
         const audio = new Audio(url);
@@ -419,7 +382,6 @@ export default function ChooseSongPage() {
     }
   };
 
-  // Cover gen mock
   const generateCover = async () => {
     setCoverGenerating(true);
     await new Promise((r) => setTimeout(r, 1400));
@@ -522,8 +484,8 @@ export default function ChooseSongPage() {
                         setGenre={setGenre}
                         mood={mood}
                         setMood={setMood}
-                        genres={genres}
-                        moods={moods}
+                        genres={genreOptions}
+                        moods={moodOptions}
                         tracks={filtered}
                         tracksLoading={tracksLoading}
                         selectedTrack={selectedTrack}

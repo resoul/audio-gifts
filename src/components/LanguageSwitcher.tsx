@@ -18,7 +18,6 @@ export function LanguageSwitcher({ variant = "stacked", className = "" }: Props)
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
 
-  // Close on outside click / escape
   useEffect(() => {
     if (!open) return;
     const onClick = (e: MouseEvent) => {

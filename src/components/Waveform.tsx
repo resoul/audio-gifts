@@ -5,7 +5,6 @@ interface WaveformProps {
 }
 
 export function Waveform({ bars = 48, className = "", animated = true }: WaveformProps) {
-  // Deterministic pseudo-random heights for SSR consistency
   const heights = Array.from({ length: bars }, (_, i) => {
     const seed = Math.sin(i * 12.9898) * 43758.5453;
     return 30 + Math.abs(seed - Math.floor(seed)) * 70;
