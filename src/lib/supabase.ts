@@ -4,9 +4,9 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 export const supabase =
-  supabaseUrl && supabaseAnonKey
-    ? createClient(supabaseUrl, supabaseAnonKey)
-    : null;
+    supabaseUrl && supabaseAnonKey
+        ? createClient(supabaseUrl, supabaseAnonKey)
+        : null;
 
 type ContactInsertPayload = {
   name: string;
@@ -39,10 +39,16 @@ type SongOption = {
   endpoint: string | null;
 };
 
+export function getAudioUrl(endpoint: string | null | undefined): string | null {
+  if (!endpoint || !supabase) return null;
+  const { data } = supabase.storage.from("audio").getPublicUrl(endpoint);
+  return data?.publicUrl ?? null;
+}
+
 export async function createContact(payload: ContactInsertPayload) {
   if (!supabase) {
     throw new Error(
-      "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+        "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
     );
   }
 
@@ -56,15 +62,15 @@ export async function createContact(payload: ContactInsertPayload) {
 export async function fetchMoods(): Promise<MoodOption[]> {
   if (!supabase) {
     throw new Error(
-      "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+        "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
     );
   }
 
   const { data, error } = await supabase
-    .from("moods")
-    .select("id, name, position")
-    .order("position", { ascending: true })
-    .order("name", { ascending: true });
+      .from("moods")
+      .select("id, name, position")
+      .order("position", { ascending: true })
+      .order("name", { ascending: true });
 
   if (error) {
     throw error;
@@ -76,15 +82,15 @@ export async function fetchMoods(): Promise<MoodOption[]> {
 export async function fetchGenres(): Promise<GenreOption[]> {
   if (!supabase) {
     throw new Error(
-      "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+        "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
     );
   }
 
   const { data, error } = await supabase
-    .from("genres")
-    .select("id, name, position")
-    .order("position", { ascending: true })
-    .order("name", { ascending: true });
+      .from("genres")
+      .select("id, name, position")
+      .order("position", { ascending: true })
+      .order("name", { ascending: true });
 
   if (error) {
     throw error;
@@ -96,14 +102,14 @@ export async function fetchGenres(): Promise<GenreOption[]> {
 export async function fetchSongs(params?: { genreId?: string | null; moodId?: string | null }) {
   if (!supabase) {
     throw new Error(
-      "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+        "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
     );
   }
 
   let query = supabase
-    .from("songs")
-    .select("id, trackName, artistName, genre_id, mood_id, duration, sort, start_time, endpoint")
-    .order("sort", { ascending: true });
+      .from("songs")
+      .select("id, trackName, artistName, genre_id, mood_id, duration, sort, start_time, endpoint")
+      .order("sort", { ascending: true });
 
   if (params?.genreId) {
     query = query.eq("genre_id", params.genreId);
