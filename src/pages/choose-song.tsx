@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Header } from "@/components/Header";
@@ -28,30 +28,22 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { Checkbox } from "@/components/ui/checkbox";
 import { useI18n, type Lang } from "@/lib/i18n";
 import { Helmet } from "react-helmet-async";
+import { fetchGenres, fetchMoods, fetchSongs } from "@/lib/supabase";
 
-const GENRES = ["All", "Pop", "Hip-Hop", "EDM", "Acoustic", "R&B", "Indie"] as const;
-const MOODS = ["All", "Joyful", "Romantic", "Nostalgic", "Uplifting", "Melancholic"] as const;
+const FALLBACK_GENRES = ["All", "Pop", "Hip-Hop", "EDM", "Acoustic", "R&B", "Indie"] as const;
+const FALLBACK_MOODS = ["All", "Joyful", "Romantic", "Nostalgic", "Uplifting", "Melancholic"] as const;
 
 type Track = {
   id: string;
-  title: string;
-  genre: Exclude<(typeof GENRES)[number], "All">;
-  mood: Exclude<(typeof MOODS)[number], "All">;
+  trackName: string;
+  artistName: string;
+  genre: string;
+  mood: string;
   duration: string;
   durationSec: number;
+  startTime: number | null;
+  endpoint: string | null;
 };
-
-const TRACKS: Track[] = [
-  { id: "t1", title: "Golden Hour", genre: "Pop", mood: "Joyful", duration: "3:24", durationSec: 204 },
-  { id: "t2", title: "Letters to You", genre: "Acoustic", mood: "Romantic", duration: "3:48", durationSec: 228 },
-  { id: "t3", title: "Skyline Drive", genre: "EDM", mood: "Uplifting", duration: "4:02", durationSec: 242 },
-  { id: "t4", title: "Lantern Light", genre: "Indie", mood: "Nostalgic", duration: "3:18", durationSec: 198 },
-  { id: "t5", title: "Velvet Hours", genre: "R&B", mood: "Romantic", duration: "3:56", durationSec: 236 },
-  { id: "t6", title: "Parallel Lines", genre: "Hip-Hop", mood: "Uplifting", duration: "3:12", durationSec: 192 },
-  { id: "t7", title: "Paper Moons", genre: "Indie", mood: "Melancholic", duration: "4:10", durationSec: 250 },
-  { id: "t8", title: "After the Rain", genre: "Acoustic", mood: "Nostalgic", duration: "3:34", durationSec: 214 },
-  { id: "t9", title: "Neon Sunday", genre: "Pop", mood: "Joyful", duration: "3:02", durationSec: 182 },
-];
 
 const PLATFORMS = [
   { id: "spotify", name: "Spotify" },
@@ -93,10 +85,14 @@ export default function ChooseSongPage() {
   const [step, setStep] = useState(1);
 
   // Step 1
-  const [genre, setGenre] = useState<(typeof GENRES)[number]>("All");
-  const [mood, setMood] = useState<(typeof MOODS)[number]>("All");
+  const [genres, setGenres] = useState<string[]>([...FALLBACK_GENRES]);
+  const [genre, setGenre] = useState<string>("All");
+  const [moods, setMoods] = useState<string[]>([...FALLBACK_MOODS]);
+  const [mood, setMood] = useState<string>("All");
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [tracks, setTracks] = useState<Track[]>([]);
+  const [tracksLoading, setTracksLoading] = useState(false);
 
   // Step 2
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
@@ -126,12 +122,78 @@ export default function ChooseSongPage() {
   const [trackTitle, setTrackTitle] = useState<string>("");
   const [titleRulesAccepted, setTitleRulesAccepted] = useState(false);
 
-  // Filtering
-  const filtered = useMemo(() => {
-    return TRACKS.filter(
-      (t) => (genre === "All" || t.genre === genre) && (mood === "All" || t.mood === mood),
-    );
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadOptions = async () => {
+      try {
+        const [genresData, moodsData] = await Promise.all([fetchGenres(), fetchMoods()]);
+        if (!isMounted) return;
+        const genreNames = genresData.map((item) => item.name).filter(Boolean);
+        const moodNames = moodsData.map((item) => item.name).filter(Boolean);
+        setGenres(["All", ...genreNames]);
+        setMoods(["All", ...moodNames]);
+      } catch {
+        if (!isMounted) return;
+        setGenres([...FALLBACK_GENRES]);
+        setMoods([...FALLBACK_MOODS]);
+      }
+    };
+
+    void loadOptions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadTracks = async () => {
+      setTracksLoading(true);
+
+      try {
+        const genresData = await fetchGenres();
+        const moodsData = await fetchMoods();
+        const songsData = await fetchSongs({
+          genreId: genre === "All" ? undefined : genresData.find((item) => item.name === genre)?.id,
+          moodId: mood === "All" ? undefined : moodsData.find((item) => item.name === mood)?.id,
+        });
+
+        if (!isMounted) return;
+
+        const mappedTracks: Track[] = (songsData ?? []).map((song) => ({
+          id: song.id,
+          trackName: song.trackName ?? "Untitled track",
+          artistName: song.artistName ?? "Unknown artist",
+          genre: genresData.find((item) => item.id === song.genre_id)?.name ?? "Unknown",
+          mood: moodsData.find((item) => item.id === song.mood_id)?.name ?? "Unknown",
+          duration: song.duration ? formatTime(song.duration) : "—",
+          durationSec: song.duration ?? 0,
+          startTime: song.start_time ?? null,
+          endpoint: song.endpoint ?? null,
+        }));
+
+        setTracks(mappedTracks);
+      } catch {
+        if (!isMounted) return;
+        setTracks([]);
+      } finally {
+        if (isMounted) {
+          setTracksLoading(false);
+        }
+      }
+    };
+
+    void loadTracks();
+
+    return () => {
+      isMounted = false;
+    };
   }, [genre, mood]);
+
+  const filtered = useMemo(() => tracks, [tracks]);
 
   // Step gating
   const hasVoice = !!voiceFile;
@@ -188,7 +250,7 @@ export default function ChooseSongPage() {
   const generateCover = async () => {
     setCoverGenerating(true);
     await new Promise((r) => setTimeout(r, 1400));
-    const seed = (coverPrompt + (selectedTrack?.title ?? "")).split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    const seed = (coverPrompt + (selectedTrack?.trackName ?? "")).split("").reduce((a, c) => a + c.charCodeAt(0), 0);
     const h1 = (seed * 7) % 360;
     const h2 = (seed * 13 + 80) % 360;
     const h3 = (seed * 23 + 200) % 360;
@@ -287,7 +349,10 @@ export default function ChooseSongPage() {
                   setGenre={setGenre}
                   mood={mood}
                   setMood={setMood}
+                  genres={genres}
+                  moods={moods}
                   tracks={filtered}
+                  tracksLoading={tracksLoading}
                   selectedTrack={selectedTrack}
                   onSelect={setSelectedTrack}
                   previewId={previewId}
@@ -407,11 +472,14 @@ export default function ChooseSongPage() {
 // ───────────────── Step 1 ─────────────────
 
 function Step1(props: {
-  genre: (typeof GENRES)[number];
-  setGenre: (g: (typeof GENRES)[number]) => void;
-  mood: (typeof MOODS)[number];
-  setMood: (m: (typeof MOODS)[number]) => void;
+  genre: string;
+  setGenre: (g: string) => void;
+  mood: string;
+  setMood: (m: string) => void;
+  genres: string[];
+  moods: string[];
   tracks: Track[];
+  tracksLoading: boolean;
   selectedTrack: Track | null;
   onSelect: (t: Track) => void;
   previewId: string | null;
@@ -424,7 +492,10 @@ function Step1(props: {
     setGenre,
     mood,
     setMood,
+    genres,
+    moods,
     tracks,
+    tracksLoading,
     selectedTrack,
     onSelect,
     previewId,
@@ -433,6 +504,12 @@ function Step1(props: {
     onClearSelection,
   } = props;
   const { t } = useI18n();
+
+  const getGenreLabel = (value: string) => {
+    const translated = t(`s1.genre.${value}`);
+    return translated === `s1.genre.${value}` ? value : translated;
+  };
+
   if (selectedTrack) {
     const playing = previewId === selectedTrack.id;
     return (
@@ -446,11 +523,12 @@ function Step1(props: {
           <div className="flex items-start justify-between gap-4 mb-5">
             <div className="min-w-0">
               <p className="text-[11px] uppercase tracking-wider text-accent mb-1.5">
-                {t(`s1.genre.${selectedTrack.genre}`)} · {t(`s1.mood.${selectedTrack.mood}`)}
+                {getGenreLabel(selectedTrack.genre)} · {selectedTrack.mood}
               </p>
               <h3 className="text-2xl md:text-3xl font-semibold tracking-tight truncate">
-                {selectedTrack.title}
+                {selectedTrack.trackName}
               </h3>
+              <p className="text-xs text-muted-foreground mt-1.5">{selectedTrack.artistName}</p>
               <p className="text-xs text-muted-foreground mt-1.5">{t("s1.duration")} · {selectedTrack.duration}</p>
             </div>
             <button
@@ -492,7 +570,7 @@ function Step1(props: {
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-accent mb-2">{t("s1.genre")}</p>
           <div className="flex flex-wrap gap-2">
-            {GENRES.map((g) => (
+            {genres.map((g) => (
               <button
                 key={g}
                 onClick={() => setGenre(g)}
@@ -502,7 +580,7 @@ function Step1(props: {
                     : "border-white/10 text-muted-foreground hover:border-white/20 hover:text-foreground"
                 }`}
               >
-                {t(`s1.genre.${g}`)}
+                {getGenreLabel(g)}
               </button>
             ))}
           </div>
@@ -510,7 +588,7 @@ function Step1(props: {
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-accent mb-2">{t("s1.mood")}</p>
           <div className="flex flex-wrap gap-2">
-            {MOODS.map((m) => (
+            {moods.map((m) => (
               <button
                 key={m}
                 onClick={() => setMood(m)}
@@ -520,14 +598,18 @@ function Step1(props: {
                     : "border-white/10 text-muted-foreground hover:border-white/20 hover:text-foreground"
                 }`}
               >
-                {t(`s1.mood.${m}`)}
+                {m}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {tracks.length === 0 ? (
+      {tracksLoading ? (
+        <div className="text-center py-16 text-muted-foreground">
+          Loading tracks...
+        </div>
+      ) : tracks.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           {t("s1.empty")}
         </div>
@@ -543,8 +625,9 @@ function Step1(props: {
               >
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <p className="text-[11px] uppercase tracking-wider text-accent mb-1">{t(`s1.genre.${tr.genre}`)} · {t(`s1.mood.${tr.mood}`)}</p>
-                    <h3 className="font-semibold tracking-tight">{tr.title}</h3>
+                    <p className="text-[11px] uppercase tracking-wider text-accent mb-1">{getGenreLabel(tr.genre)} · {tr.mood}</p>
+                    <h3 className="font-semibold tracking-tight">{tr.trackName}</h3>
+                    <p className="text-xs text-muted-foreground mt-1">{tr.artistName}</p>
                   </div>
                   <button
                     onClick={(e) => {
@@ -606,7 +689,7 @@ function Step2(props: {
     <div className="animate-fade-up">
       <h2 className="text-2xl font-semibold tracking-tight mb-2">{t("s2.title")}</h2>
       <p className="text-muted-foreground mb-6">
-        {t("s2.subtitlePre")} <span className="text-foreground font-medium">{track?.title ?? t("s2.yourTrack")}</span>.
+        {t("s2.subtitlePre")} <span className="text-foreground font-medium">{track?.trackName ?? t("s2.yourTrack")}</span>.
       </p>
 
       <div className="grid md:grid-cols-2 gap-5 mb-8">
@@ -877,14 +960,14 @@ function Step3(props: {
             />
             <div className="absolute inset-0 flex flex-col justify-end p-6 bg-gradient-to-t from-black/60 via-transparent">
               <p className="text-xs uppercase tracking-[0.2em] text-white/70">{track?.genre}</p>
-              <p className="text-xl font-semibold text-white tracking-tight">{track?.title}</p>
+              <p className="text-xl font-semibold text-white tracking-tight">{track?.trackName}</p>
             </div>
           </div>
         ) : gradient ? (
           <div className="absolute inset-0" style={{ background: gradient }}>
             <div className="absolute inset-0 flex flex-col justify-end p-6 bg-gradient-to-t from-black/60 via-transparent">
               <p className="text-xs uppercase tracking-[0.2em] text-white/70">{track?.genre}</p>
-              <p className="text-xl font-semibold text-white tracking-tight">{track?.title}</p>
+              <p className="text-xl font-semibold text-white tracking-tight">{track?.trackName}</p>
             </div>
           </div>
         ) : (
@@ -904,7 +987,7 @@ function Step3(props: {
         <h2 className="text-2xl font-semibold tracking-tight mb-2">{t("s3.choice.title")}</h2>
         <p className="text-muted-foreground mb-6">
           {t("s3.choice.desc.pre")}{" "}
-          <span className="text-foreground font-medium">{track?.title ?? t("s3.yourTrack")}</span>.
+          <span className="text-foreground font-medium">{track?.trackName ?? t("s3.yourTrack")}</span>.
         </p>
         <div className="grid sm:grid-cols-2 gap-4">
           <button
@@ -953,7 +1036,7 @@ function Step3(props: {
         </div>
         <p className="text-muted-foreground mb-6">
           {t("s3.gen.desc.pre")}{" "}
-          <span className="text-foreground font-medium">{track?.title ?? t("s3.yourTrack")}</span>.
+          <span className="text-foreground font-medium">{track?.trackName ?? t("s3.yourTrack")}</span>.
         </p>
 
         <div className="grid md:grid-cols-2 gap-6">
@@ -1058,7 +1141,7 @@ function Step3(props: {
       </div>
       <p className="text-muted-foreground mb-6">
         {t("s3.up.desc.pre")}{" "}
-        <span className="text-foreground font-medium">{track?.title ?? t("s3.yourTrack")}</span>.
+        <span className="text-foreground font-medium">{track?.trackName ?? t("s3.yourTrack")}</span>.
       </p>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -1356,7 +1439,7 @@ function Step5(props: {
 
   const platformNames = PLATFORMS.filter((p) => platforms.includes(p.id)).map((p) => p.name).join(", ");
   const total = 49;
-  const displayTitle = trackTitle.trim() || track?.title || "—";
+  const displayTitle = trackTitle.trim() || track?.trackName || "—";
 
   return (
     <div className="animate-fade-up">
@@ -1378,7 +1461,7 @@ function Step5(props: {
 
         <div className="space-y-3 text-sm">
           <SummaryRow label={t("s5.releaseTitle")} value={displayTitle} />
-          <SummaryRow label={t("s5.instrumental")} value={track ? `${track.title} · ${track.genre} · ${track.duration}` : "—"} />
+          <SummaryRow label={t("s5.instrumental")} value={track ? `${track.trackName} · ${track.genre} · ${track.duration}` : "—"} />
           <SummaryRow
             label={t("s5.voiceMessage")}
             value={voiceFile ? `${formatTime(voiceDuration)} · ${t("s5.insertedAt")} ${formatTime(insertAt)}` : t("s5.notIncluded")}

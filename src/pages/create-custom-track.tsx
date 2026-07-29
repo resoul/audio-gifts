@@ -6,9 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
-import { ArrowLeft, Sparkles, AlertCircle } from "lucide-react";
+import { ArrowLeft, Sparkles, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useI18n } from "@/lib/i18n";
 import { Helmet } from "react-helmet-async";
+import { createContact } from "@/lib/supabase";
 
 const emailSchema = z.string().trim().email().max(255);
 const nameSchema = z.string().trim().min(1).max(100);
@@ -18,12 +19,46 @@ export default function CreateCustomTrackPage() {
   const [description, setDescription] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [subject] = useState("Custom track request");
   const [touchedEmail, setTouchedEmail] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   const emailValid = useMemo(() => emailSchema.safeParse(email).success, [email]);
   const nameValid = useMemo(() => nameSchema.safeParse(name).success, [name]);
   const descValid = description.trim().length > 0;
   const canSubmit = descValid && nameValid && emailValid;
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!canSubmit) {
+      setTouchedEmail(true);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+
+    try {
+      await createContact({
+        name: name.trim(),
+        email: email.trim(),
+        subject,
+        message: description.trim(),
+      });
+      setSubmitted(true);
+      setDescription("");
+      setName("");
+      setEmail("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to submit your request right now.";
+      setSubmitError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <>
@@ -68,7 +103,17 @@ export default function CreateCustomTrackPage() {
               </p>
             </div>
 
-            <div className="glass rounded-3xl p-8 md:p-12 shadow-soft animate-fade-up space-y-6">
+            <form onSubmit={handleSubmit} className="glass rounded-3xl p-8 md:p-12 shadow-soft animate-fade-up space-y-6">
+              {submitted ? (
+                <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-600 flex items-start gap-3">
+                  <CheckCircle2 className="h-5 w-5 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Your request has been sent successfully.</p>
+                    <p className="text-emerald-700/80 mt-1">We will review your custom track request shortly.</p>
+                  </div>
+                </div>
+              ) : null}
+
               {/* Name + Email */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div className="space-y-2">
@@ -119,15 +164,19 @@ export default function CreateCustomTrackPage() {
                 />
               </div>
 
+              {submitError ? (
+                <p className="text-sm text-destructive">{submitError}</p>
+              ) : null}
+
               <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">
-                {description.length} {t("custom.chars")}
-              </span>
-                <Button variant="hero" size="lg" disabled={!canSubmit}>
-                  {t("custom.submit")}
+                <span className="text-xs text-muted-foreground">
+                  {description.length} {t("custom.chars")}
+                </span>
+                <Button type="submit" variant="hero" size="lg" disabled={!canSubmit || isSubmitting}>
+                  {isSubmitting ? "Submitting..." : t("custom.submit")}
                 </Button>
               </div>
-            </div>
+            </form>
           </div>
         </main>
         <Footer />
