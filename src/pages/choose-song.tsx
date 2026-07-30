@@ -95,6 +95,18 @@ function todayPlusDays(days: number) {
   return d.toISOString().split("T")[0];
 }
 
+function normalizeReleaseDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "—") return null;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+
+  const parsed = new Date(`${trimmed}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : trimmed;
+}
+
 function formatPrettyDate(iso: string, lang: Lang = "en") {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -440,6 +452,7 @@ export default function ChooseSongPage() {
 
     try {
       const trackId = normalizeTrackId(selectedTrack?.id);
+      const sanitizedReleaseDate = normalizeReleaseDate(releaseDate);
 
       const orderRecord = await createOrder({
         track_id: trackId,
@@ -451,7 +464,7 @@ export default function ChooseSongPage() {
         voice_duration: voiceDuration || null,
         insert_at: insertAt || null,
         platforms,
-        release_date: releaseDate || null,
+        release_date: sanitizedReleaseDate,
         total_amount: 49,
         status: "pending",
       });
@@ -1373,6 +1386,7 @@ function Step4(props: {
   const minDate = todayPlusDays(30);
   const trimmed = trackTitle.trim();
   const showTitleError = trackTitle.length > 0 && !titleValid;
+  const safeReleaseDate = normalizeReleaseDate(releaseDate) ?? "";
 
   return (
       <div className="animate-fade-up">
@@ -1473,7 +1487,7 @@ function Step4(props: {
               <input
                   type="date"
                   min={minDate}
-                  value={releaseDate}
+                  value={safeReleaseDate}
                   onChange={(e) => setReleaseDate(e.target.value)}
                   className="bg-transparent text-base font-medium focus:outline-none w-full cursor-pointer [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none"
               />
