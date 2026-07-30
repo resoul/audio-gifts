@@ -29,12 +29,12 @@ const CANDIDATE_CODECS: AudioCodec[] = ["mp3", "aac"];
 const SKIP_BELOW_BYTES = 0;
 
 export async function compressAudio(
-  file: File,
-  opts: {
-    quality?: "low" | "medium";
-    onProgress?: (p: AudioCompressionProgress) => void;
-    signal?: AbortSignal;
-  } = {},
+    file: File,
+    opts: {
+      quality?: "low" | "medium";
+      onProgress?: (p: AudioCompressionProgress) => void;
+      signal?: AbortSignal;
+    } = {},
 ): Promise<CompressedAudio> {
   const quality = opts.quality === "low" ? QUALITY_LOW : QUALITY_MEDIUM;
   const report = opts.onProgress ?? (() => {});
@@ -118,6 +118,11 @@ export async function compressAudio(
     const durationMs = Math.round((await input.computeDuration()) * 1000);
 
     if (buffer.byteLength >= file.size) {
+      // Compression didn't help: keep the original file's real bytes, name, and
+      // type untouched. Do NOT rename/relabel it as .mp3 here — the bytes are
+      // still whatever the original container was (e.g. webm/opus), and a
+      // mismatched extension/mime will make players report a 0-duration file
+      // downstream.
       report({ stage: "done", percent: 100 });
       return { file, durationMs, bytes: file.size };
     }
@@ -125,9 +130,9 @@ export async function compressAudio(
     const ext = ".mp3";
     const mime = "audio/mpeg";
     const compressedFile = new File(
-      [buffer],
-      file.name.replace(/\.[^.]+$/, "") + ext,
-      { type: mime },
+        [buffer],
+        file.name.replace(/\.[^.]+$/, "") + ext,
+        { type: mime },
     );
 
     report({ stage: "done", percent: 100 });
@@ -141,10 +146,10 @@ export async function compressAudio(
       return cancelledResult();
     }
     console.error("Audio compression failed, uploading original", e);
-    const fallbackFile = new File([file], file.name.replace(/\.[^.]+$/, "") + ".mp3", {
-      type: "audio/mpeg",
-    });
-    return { file: fallbackFile, bytes: fallbackFile.size };
+    // Conversion failed: fall back to the original file completely unchanged.
+    // Renaming/relabeling these bytes as .mp3 here would mislabel the real
+    // container (e.g. webm/opus), causing 0-duration playback downstream.
+    return { file, bytes: file.size };
   } finally {
     signal?.removeEventListener("abort", onAbort);
   }

@@ -453,14 +453,19 @@ export default function ChooseSongPage() {
     try {
       const trackId = normalizeTrackId(selectedTrack?.id);
       const sanitizedReleaseDate = normalizeReleaseDate(releaseDate);
+      const normalizedTrackName = selectedTrack?.trackName?.trim() || null;
+      const normalizedArtistName = selectedTrack?.artistName?.trim() || null;
+      const normalizedGenre = selectedTrack?.genre?.trim() || null;
+      const normalizedMood = selectedTrack?.mood?.trim() || null;
+      const normalizedReleaseTitle = (trackTitle.trim() || selectedTrack?.trackName?.trim() || "").trim() || null;
 
       const orderRecord = await createOrder({
         track_id: trackId,
-        track_name: selectedTrack?.trackName ?? null,
-        artist_name: selectedTrack?.artistName ?? null,
-        genre: selectedTrack?.genre ?? null,
-        mood: selectedTrack?.mood ?? null,
-        release_title: trackTitle.trim() || selectedTrack?.trackName || null,
+        track_name: normalizedTrackName,
+        artist_name: normalizedArtistName,
+        genre: normalizedGenre,
+        mood: normalizedMood,
+        release_title: normalizedReleaseTitle,
         voice_duration: voiceDuration || null,
         insert_at: insertAt || null,
         platforms,

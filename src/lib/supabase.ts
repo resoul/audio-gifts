@@ -84,22 +84,42 @@ export async function uploadOrderAsset(file: File, orderId: string, kind: "voice
   }
 
   const isVoiceAsset = kind === "voice";
+
+  // Map real MIME types to their correct extension. Never force an
+  // extension/MIME that doesn't match the actual file bytes — a mismatched
+  // container (e.g. webm bytes labeled .mp3) plays back with a 0-duration
+  // in most players and downloaders.
+  const MIME_TO_EXT: Record<string, string> = {
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+    "audio/mp4": "m4a",
+    "audio/aac": "aac",
+    "audio/wav": "wav",
+    "audio/x-wav": "wav",
+  };
+
+  const extensionFromName = (file.name.split(".").pop() || "").toLowerCase();
+  const resolvedExtension =
+      MIME_TO_EXT[file.type] ||
+      (extensionFromName ? extensionFromName.replace(/[^a-zA-Z0-9]/g, "") : "") ||
+      (isVoiceAsset ? "webm" : "bin");
+
   const normalizedName = isVoiceAsset
-      ? (file.name.toLowerCase().endsWith(".mp3")
-          ? file.name
-          : `${file.name.replace(/\.[^.]+$/, "")}.mp3`)
+      ? `${file.name.replace(/\.[^.]+$/, "") || "voice"}.${resolvedExtension}`
       : file.name;
-  const extension = (normalizedName.split(".").pop() || (isVoiceAsset ? "mp3" : "bin")).replace(/[^a-zA-Z0-9.-]/g, "");
+  const extension = (normalizedName.split(".").pop() || (isVoiceAsset ? resolvedExtension : "bin")).replace(/[^a-zA-Z0-9.-]/g, "");
   const fileName = `${orderId}/${kind}-${Date.now()}.${extension}`;
   const uploadFile = isVoiceAsset
       ? new File([file], normalizedName, {
-          type: file.type === "audio/webm" ? "audio/mpeg" : file.type || "audio/mpeg",
-        })
+        type: file.type || "application/octet-stream",
+      })
       : file;
   const { data, error } = await supabase.storage.from("order").upload(fileName, uploadFile, {
     cacheControl: "3600",
     upsert: false,
-    contentType: uploadFile.type || (isVoiceAsset ? "audio/mpeg" : "application/octet-stream"),
+    contentType: uploadFile.type || "application/octet-stream",
   });
 
   if (error) {
