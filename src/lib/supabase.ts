@@ -39,6 +39,23 @@ type SongOption = {
   endpoint: string | null;
 };
 
+export type OrderInsertPayload = {
+  track_id?: number | null;
+  track_name?: string | null;
+  artist_name?: string | null;
+  genre?: string | null;
+  mood?: string | null;
+  release_title?: string | null;
+  voice_file_path?: string | null;
+  cover_file_path?: string | null;
+  voice_duration?: number | null;
+  insert_at?: number | null;
+  platforms?: string[] | null;
+  release_date?: string | null;
+  total_amount?: number | null;
+  status?: string | null;
+};
+
 export function getAudioUrl(endpoint: string | null | undefined): string | null {
   if (!endpoint || !supabase) return null;
   const { data } = supabase.storage.from("audio").getPublicUrl(endpoint);
@@ -57,6 +74,71 @@ export async function createContact(payload: ContactInsertPayload) {
   if (error) {
     throw error;
   }
+}
+
+export async function uploadOrderAsset(file: File, orderId: string, kind: "voice" | "cover") {
+  if (!supabase) {
+    throw new Error(
+        "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+    );
+  }
+
+  const isVoiceAsset = kind === "voice";
+  const normalizedName = isVoiceAsset
+      ? (file.name.toLowerCase().endsWith(".mp3")
+          ? file.name
+          : `${file.name.replace(/\.[^.]+$/, "")}.mp3`)
+      : file.name;
+  const extension = (normalizedName.split(".").pop() || (isVoiceAsset ? "mp3" : "bin")).replace(/[^a-zA-Z0-9.-]/g, "");
+  const fileName = `${orderId}/${kind}-${Date.now()}.${extension}`;
+  const uploadFile = isVoiceAsset
+      ? new File([file], normalizedName, {
+          type: file.type === "audio/webm" ? "audio/mpeg" : file.type || "audio/mpeg",
+        })
+      : file;
+  const { data, error } = await supabase.storage.from("order").upload(fileName, uploadFile, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: uploadFile.type || (isVoiceAsset ? "audio/mpeg" : "application/octet-stream"),
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.path ?? fileName;
+}
+
+export async function createOrder(payload: OrderInsertPayload) {
+  if (!supabase) {
+    throw new Error(
+        "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+    );
+  }
+
+  const { data, error } = await supabase.from("order").insert([payload]).select().single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+export async function updateOrder(id: string | number, payload: Partial<OrderInsertPayload>) {
+  if (!supabase) {
+    throw new Error(
+        "Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY."
+    );
+  }
+
+  const { data, error } = await supabase.from("order").update(payload).eq("id", id).select().single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
 }
 
 export async function fetchMoods(): Promise<MoodOption[]> {
